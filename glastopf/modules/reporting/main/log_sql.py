@@ -17,6 +17,8 @@
 
 #import json
 import logging
+import re
+import subprocess
 
 from sqlalchemy import Table, Column, Integer, String, MetaData, TEXT
 from sqlalchemy.orm import sessionmaker
@@ -33,13 +35,55 @@ class Database(object):
         self.setup_mapping()
         self.session = sessionmaker(bind=self.engine)()
 
+    def createASN(self, conn, peerIP):
+        def addslashes(s):
+            l = ["\\", '"', "'", "\0", ]
+            for i in l:
+                if i in s:
+                    s = s.replace(i, '\\'+i)
+            return s
+
+        def reverseIP(address):
+            temp = re.split("\.", address)
+            convertedAddress = str(temp[3]) +'.' + str(temp[2]) + '.' + str(temp[1]) +'.' + str(temp[0])
+            return convertedAddress
+
+        querycmd1 = reverseIP(peerIP) + '.origin.asn.cymru.com'
+        response1 = subprocess.Popen(['dig', '-t', 'TXT', querycmd1, '+short'], stdout=subprocess.PIPE).communicate()[0].decode('utf-8')
+        response1List = re.split('\|', response1)
+        ASN = response1List[0].strip('" ')
+        querycmd2 = 'AS' + ASN + '.asn.cymru.com'
+        response2 = subprocess.Popen(['dig', '-t', 'TXT', querycmd2, '+short'], stdout=subprocess.PIPE).communicate()[0].decode('utf-8')
+        response2List = re.split('\|', response2)
+        if len(response2List) < 4:
+            asnid = 1
+            logger.info("Invalid AS response, attackid = %i" % (attackid))
+        else:
+            isp = addslashes(response2List[4].replace('"', ''))
+            network = addslashes(response1List[1].strip())
+            country = addslashes(response1List[2].strip())
+            registry = addslashes(response1List[3].strip())
+            isp = network + "-" + isp
+            res = conn.execute("""SELECT `asnid` FROM `asinfo` WHERE `asn` = %s AND `rir` = %s AND `country` = %s AND `asname` = %s """, (ASN, registry, country, isp))
+            r = res.fetchone()
+            res.close()
+            if r:
+                asnid = int(r[0])
+                logger.info("Existing AS response (%s,%s,%s,%s), asnid = %i" % (isp, network, country, registry, asnid))
+            else:
+                res = conn.execute("""INSERT INTO `asinfo` (`asn`, `rir`, `country`, `asname`) VALUES (%s, %s, %s, %s) """, (ASN, registry, country, isp))
+                asnid = res.lastrowid
+                res.close()
+                logger.info("New AS response (%s,%s,%s,%s), asnid = %i" % (isp, network, country, registry, asnid))
+      
+        return asnid
+
     def insert(self, attack_event):
-        entry = attack_event.event_dict()
-
-        entry['source'] = (entry['source'][0] + ":" + str(entry['source'][1]))
-
         try:
             conn = self.engine.connect()
+            entry = attack_event.event_dict()
+            entry['asnid'] = self.createASN(conn, entry['source'][0])
+            entry['source'] = (entry['source'][0] + ":" + str(entry['source'][1]))
             conn.execute(self.events_table.insert(entry))
         except exc.OperationalError as e:
             logger.error("Error inserting attack event into main database: {0}".format(e))
@@ -80,6 +124,7 @@ class Database(object):
             Column('filename', String(500)),
             Column('version', String(10)),
             Column('sensorid', String(36)),
+            Column('asnid', Integer)
         )
         #only creates if it cant find the schema
         meta.create_all(self.engine)
