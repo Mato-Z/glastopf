@@ -57,7 +57,7 @@ class Database(object):
         response2List = re.split('\|', response2)
         if len(response2List) < 4:
             asnid = 1
-            logger.info("Invalid AS response, attackid = %i" % (attackid))
+            logger.info("Invalid AS response: %s" % (str(response2)))
         else:
             isp = addslashes(response2List[4].replace('"', '').strip('"\' \n'))
             network = addslashes(response1List[1].strip('"\' \n'))
