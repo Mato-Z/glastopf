@@ -48,6 +48,7 @@ class HTTPHandler(BaseHTTPRequestHandler):
         self.raw_requestline = ''
         self.close_connection = None
         self.request_body = ''
+        self.http_host = ''
 
         #parse the request
         self.handle_one_request()
@@ -74,6 +75,8 @@ class HTTPHandler(BaseHTTPRequestHandler):
         self.request_verb = self.command
         if hasattr(self, 'headers'):
             self.request_headers = self.headers
+            #http host from request
+            self.http_host = self.headers.get('Host')
         else:
             self.request_headers = BaseHTTPRequestHandler.MessageClass
 

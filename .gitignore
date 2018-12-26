@@ -30,11 +30,15 @@ nosetests.xml
 # Translations
 *.mo
 
+# virtualenv
+venv/
+
 # Mr Developer
 .mr.developer.cfg
 .project
 .pydevproject
 glastopf.cfg
+.vscode
 
 glastopf/sandbox/sandbox.php
 log/
